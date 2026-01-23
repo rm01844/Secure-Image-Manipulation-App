@@ -136,7 +136,7 @@ To create the first admin, navigate to the register.html and scroll below to fin
 
 ## Security Features
 
-- **Password Requirements:** Min 8 chars, uppercase, lowercase, number, special character
+- **Password Requirement:** Min 8 chars, uppercase, lowercase, number, special character
 - **CSRF Protection:** All forms protected
 - **Login Attempts:** Max 5 attempts, 10-minute lockout
 - **Email Verification:** Required before account activation
@@ -186,7 +186,7 @@ static/uploads/         - User uploaded images
 static/edited/          - AI-edited images
 users.db               - SQLite database
 .env                   - Environment variables (not in repo)
-requirements.txt       - Python dependencies
+requirement.txt       - Python dependencies
 ```
 
 ## Support
