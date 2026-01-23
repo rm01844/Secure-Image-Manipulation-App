@@ -1,0 +1,541 @@
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          Flask Web Application                          │
+│   (Authentication + Role System + Email + CAPTCHA + JWT + AI Image)     │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│                               Modules                                   │
+│                                                                         │
+│  1. User Model (SQLAlchemy)      2. Email Service (SMTP)                │
+│  3. CAPTCHA Validator            4. Token System (JWT                   │
+│     (Google reCAPTCHA v2)           & itsdangerous)                     │
+│  5. Session Manager              6. Lockout Tracker                     │
+│     (Flask-Login)                   (SQLite)                            │
+│  7. Image AI Service             8. Face Detection                      │
+│     (Google Gemini 2.5)             (OpenCV)                            │
+│  9. File Storage System         10. CSRF Protection                     │
+│     (Local Filesystem)              (Flask-WTF)                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                    ↓                    ↓                    ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │  Registration     │  │   Login Phase     │  │  Email            │
+    │  Phase            │  │                   │  │  Verification     │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ [User             │  │ [Login Form/API]  │  │ Generate Token    │
+    │  Registration     │  │                   │  │ (JWT/serializer)  │
+    │  Form/API]        │  │                   │  │                   │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Validate CAPTCHA  │  │ Check CAPTCHA     │  │ Email sent with   │
+    │                   │  │ (if web route)    │  │ verify link       │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Validate Password │  │ Validate          │  │ User Clicks →     │
+    │ Policy (8+ chars, │  │ Credentials       │  │ /verify_email/    │
+    │ upper, lower,     │  │                   │  │ <token>           │
+    │ number, special)  │  │                   │  │                   │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Check Existing    │  │ If invalid →      │  │ Decode JWT token  │
+    │ User (email)      │  │ Increment Failed  │  │ Update            │
+    │                   │  │ attempts          │  │ is_verified=True  │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Hash Password     │  │ If attempts ≥5    │  │ Redirect to Login │
+    │ (Werkzeug PBKDF2) │  │ → Lock Account    │  │                   │
+    │                   │  │ (10 min timeout)  │  │                   │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐
+    │ Create User       │  │ If verified →     │
+    │ Record            │  │ Create Session    │
+    │ (is_verified=     │  │ (session['user_   │
+    │  False, role=     │  │  id'], ['role'])  │
+    │  user/admin)      │  │                   │
+    └───────────────────┘  └───────────────────┘
+              ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐
+    │ Generate Email    │  │ Route based on    │
+    │ Verification      │  │ role:             │
+    │ Token (JWT 24hr)  │  │ admin→dashboard   │
+    │                   │  │ user→welcome      │
+    └───────────────────┘  └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Send Verification │
+    │ Email (SMTP)      │
+    └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Password Reset Flow                                │
+└─────────────────────────────────────────────────────────────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ [Forgot Password  │
+    │  Form]            │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Validate Email    │
+    │ Exists in DB      │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Generate JWT      │
+    │ Reset Token (1hr) │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Send Reset Email  │
+    │ with link         │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ User Clicks Reset │
+    │ Link →            │
+    │ /reset_password/  │
+    │ <token>           │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Validate Token    │
+    │ (not expired)     │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ [Reset Password   │
+    │  Form]            │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Validate New      │
+    │ Password Policy   │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Hash & Update     │
+    │ Password in DB    │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Clear Login       │
+    │ Attempts Record   │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Redirect to Login │
+    └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     User Dashboard & Image Editor                       │
+└─────────────────────────────────────────────────────────────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Check Session     │
+    │ (login_required   │
+    │  decorator)       │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Load User Data    │
+    │ (name, profile    │
+    │  picture)         │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Render Welcome    │
+    │ Page with:        │
+    │ • Profile Picture │
+    │ • Upload Option   │
+    │ • Webcam Option   │
+    └───────────────────┘
+              ↓
+    ┌───────────────────────────────────┐
+    │ User Action: Upload or Webcam     │
+    └───────────────────────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ [User Uploads     │
+    │  Image File or    │
+    │  Captures from    │
+    │  Webcam]          │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ POST to           │
+    │ /api/edit-image   │
+    │ (multipart/form)  │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Validate:         │
+    │ • File exists     │
+    │ • Size < 16MB     │
+    │ • Image type      │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Save to           │
+    │ /static/uploads/  │
+    │ upload_<userId>_  │
+    │ <uuid>.png        │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ FACE DETECTION    │
+    │ (OpenCV Cascade)  │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Convert to        │
+    │ Grayscale         │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ detectMultiScale  │
+    │ (haarcascade_     │
+    │  frontalface)     │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐      ┌───────────────────┐
+    │ Face Found?       │──NO─→│ Return Error:     │
+    │                   │      │ "No human face    │
+    └───────────────────┘      │  detected"        │
+              ↓ YES            │ Delete uploaded   │
+    ┌───────────────────┐      │ file              │
+    │ Read Image Bytes  │      └───────────────────┘
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ AI IMAGE          │
+    │ PROCESSING        │
+    │ (Google Gemini    │
+    │  2.5 Flash Image) │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Build AI Prompt:  │
+    │ "Replace ONLY the │
+    │  shirt with black │
+    │  t-shirt logo     │
+    │  'SUPPORT SMALL   │
+    │  BUSINESS',       │
+    │  preserve face,   │
+    │  skin, hair,      │
+    │  background"      │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ API Call with     │
+    │ Retry Logic       │
+    │ (max 3 attempts,  │
+    │  exponential      │
+    │  backoff)         │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐      ┌───────────────────┐
+    │ API Response?     │─429─→│ Return Error:     │
+    │                   │      │ "API quota        │
+    └───────────────────┘      │  exceeded, retry  │
+              ↓ Success        │  later"           │
+    ┌───────────────────┐      └───────────────────┘
+    │ Extract Image     │
+    │ from Response     │
+    │ (inline_data)     │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Save to           │
+    │ /static/edited/   │
+    │ edited_<userId>_  │
+    │ <uuid>.png        │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Update DB:        │
+    │ users.profile_    │
+    │ picture =         │
+    │ "/static/edited/  │
+    │ <filename>"       │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Return JSON:      │
+    │ {                 │
+    │   success: true,  │
+    │   edited_url:     │
+    │   "/static/       │
+    │    edited/..."    │
+    │ }                 │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Display Edited    │
+    │ Image on Frontend │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ User Options:     │
+    │ • Download        │
+    │ • Retake/Upload   │
+    │ • Set as Profile  │
+    └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Admin Dashboard Flow                            │
+└─────────────────────────────────────────────────────────────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Check Session     │
+    │ role: admin or    │
+    │ superadmin        │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Query All Users   │
+    │ from Database     │
+    │ (id, name, email, │
+    │  role, profile_   │
+    │  picture)         │
+    └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Render Admin      │
+    │ Dashboard with    │
+    │ User Table        │
+    └───────────────────┘
+              ↓
+    ┌───────────────────────────────────┐
+    │ Admin Actions Available:          │
+    └───────────────────────────────────┘
+              ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ PROMOTE USER      │  │ DEMOTE USER       │  │ DELETE PROFILE    │
+    │ (Only Superadmin) │  │ (Admin/Superadmin)│  │ PICTURE           │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ POST /admin/      │  │ POST /admin/      │  │ POST /admin/      │
+    │ promote/<user_id> │  │ demote/<user_id>  │  │ delete-picture/   │
+    │                   │  │                   │  │ <user_id>         │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Verify Session    │  │ Update DB:        │  │ Get profile_      │
+    │ role = superadmin │  │ SET role='user'   │  │ picture path      │
+    │                   │  │ WHERE id=?        │  │ from DB           │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Update DB:        │  │ Flash Success     │  │ Delete file from  │
+    │ SET role='admin'  │  │ Message           │  │ filesystem        │
+    │ WHERE id=?        │  │                   │  │ (os.remove)       │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Flash Success     │  │ Redirect back to  │  │ Update DB:        │
+    │ Message           │  │ Admin Dashboard   │  │ SET profile_      │
+    │                   │  │                   │  │ picture=NULL      │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                                            ↓
+    ┌───────────────────┐              ┌───────────────────┐
+    │ Redirect back to  │              │ Redirect back to  │
+    │ Admin Dashboard   │              │ Admin Dashboard   │
+    └───────────────────┘              └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Navigation & Switching                             │
+└─────────────────────────────────────────────────────────────────────────┘
+              ↓
+    ┌───────────────────┐              ┌───────────────────┐
+    │ /switch-to-admin  │              │ /switch-to-user   │
+    │ (from user view)  │              │ (from admin view) │
+    └───────────────────┘              └───────────────────┘
+              ↓                                  ↓
+    ┌───────────────────┐              ┌───────────────────┐
+    │ Check Session     │              │ Redirect to       │
+    │ role: admin/      │              │ /welcome/<user_id>│
+    │ superadmin        │              │                   │
+    └───────────────────┘              └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Redirect to       │
+    │ /admin/dashboard  │
+    └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         API Endpoints                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+              ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ POST /api/        │  │ POST /api/login   │  │ GET /api/verify_  │
+    │ register          │  │                   │  │ email/<token>     │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ JSON Input:       │  │ JSON Input:       │  │ Decode JWT Token  │
+    │ first_name,       │  │ email_id,         │  │                   │
+    │ last_name, email, │  │ password          │  │                   │
+    │ password,         │  │                   │  │                   │
+    │ admin_key         │  │                   │  │                   │
+    │ (optional)        │  │                   │  │                   │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Validate & Hash   │  │ Validate          │  │ Update            │
+    │ Password          │  │ Credentials       │  │ is_verified=True  │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+    │ Create User       │  │ Generate JWT      │  │ Return Success    │
+    │ (role: admin if   │  │ Token (1hr exp)   │  │ Message (200)     │
+    │  admin_key valid) │  │                   │  │                   │
+    └───────────────────┘  └───────────────────┘  └───────────────────┘
+              ↓                      ↓
+    ┌───────────────────┐  ┌───────────────────┐
+    │ Send Verification │  │ Return:           │
+    │ Email with Link   │  │ {message, token,  │
+    │                   │  │  role}            │
+    └───────────────────┘  └───────────────────┘
+              ↓
+    ┌───────────────────┐
+    │ Return Success    │
+    │ (201) with        │
+    │ verification_link │
+    └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Internal Flowchart                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    APP STARTUP
+    ↓
+    LOAD .ENV VARIABLES (FLASK_SECRET, DB URI, MAIL, GOOGLE CLOUD)
+    ↓
+    INIT FLASK APP + EXTENSIONS (SQLAlchemy, CSRF, CORS, Mail)
+    ↓
+    INIT GOOGLE CLOUD (Vertex AI, Gemini Client)
+    ↓
+    CREATE FOLDERS (static/uploads/, static/edited/)
+    ↓
+    INIT DATABASE (Users table, login_attempts table)
+    ↓
+    LOAD SUPERADMIN (from .env → create if not exists)
+    ↓
+    REGISTER ROUTES (auth, user, admin, API, image processing)
+    ↓
+    START FLASK SERVER (port 5000, debug=True)
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Components & Responsibilities                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Flask App
+    • User Model, session management, configuration
+    • Route handling and request processing
+
+    Login Attempts DB (SQLite)
+    • Stores failed login count per email
+    • Tracks lockout timestamps (10-min timeout)
+
+    Token Generation & Verification
+    • JWT for API authentication (1hr expiry)
+    • itsdangerous Serializer for email tokens (24hr expiry)
+    • Token validation and expiration handling
+
+    SMTP Email Service (Gmail)
+    • Sends verification emails (registration)
+    • Sends password reset emails
+    • HTML formatted emails with branded templates
+
+    Google reCAPTCHA v2
+    • Prevents bot registrations
+    • Validates on login and registration forms
+
+    Google Gemini 2.5 Flash Image (Vertex AI)
+    • AI-powered t-shirt replacement
+    • Preserves face, skin tone, background
+    • Natural wrinkle and perspective fitting
+
+    OpenCV Face Detection
+    • Validates human face presence before AI processing
+    • Uses Haar Cascade frontalface classifier
+    • Rejects images without detectable faces
+
+    File Storage System
+    • Local filesystem storage (static/uploads/, static/edited/)
+    • User-specific file naming (upload_<userId>_<uuid>.png)
+    • Security: Only file owner can access via routes
+
+    Session Management (Flask-Login)
+    • Stores user_id and role in server-side session
+    • 1-hour session timeout
+    • Role-based access control (user, admin, superadmin)
+
+    Password Security
+    • Werkzeug PBKDF2 hashing with salt
+    • Policy enforcement (8+ chars, upper, lower, number, special)
+    • Validation with password-strength library
+
+    CSRF Protection (Flask-WTF)
+    • Protects all web forms
+    • Exempts API endpoints
+    • Token validation on POST requests
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Security Features                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    ✓ Password Hashing (PBKDF2 + Salt)
+    ✓ Password Policy (Complexity Requirements)
+    ✓ Email Verification (Required for Login)
+    ✓ Login Attempt Tracking (5 attempts → 10-min lockout)
+    ✓ JWT Token Authentication (1-hour expiry)
+    ✓ CSRF Protection (All Forms)
+    ✓ reCAPTCHA v2 (Bot Prevention)
+    ✓ Role-Based Access Control (User/Admin/Superadmin)
+    ✓ Session Management (Secure Server-Side)
+    ✓ File Access Control (User-Specific Routes)
+    ✓ Face Detection Validation (Humans Only)
+    ✓ Input Validation (All Forms & API)
+    ✓ SQL Injection Prevention (Parameterized Queries)
+    ✓ Token Expiration (Email: 24hr, Reset: 1hr, Login: 1hr)
+    ✓ Rate Limit Handling (API Retry Logic with Backoff)
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Error Handling                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Registration Errors:
+    • User already exists → Redirect to login
+    • Invalid password → Flash error, stay on form
+    • CAPTCHA failed → Flash error, retry
+    • Email send failed → User created, warning shown
+
+    Login Errors:
+    • User not found → Increment attempts, show error
+    • Wrong password → Increment attempts, show remaining
+    • Account locked → Show lockout time remaining
+    • Email not verified → Flash warning, stay on login
+
+    Image Processing Errors:
+    • No file uploaded → Return 400 error
+    • No face detected → Delete file, return 400
+    • API quota exceeded (429) → Retry 3x with backoff
+    • AI processing failed → Return 500 error
+
+    Admin Errors:
+    • Unauthorized access → Flash error, redirect to login
+    • Non-superadmin promotes user → Deny action
+    • Profile picture not found → Flash warning
+
+    Password Reset Errors:
+    • Email not found → Flash error
+    • Invalid/expired token → Redirect to forgot password
+    • Password policy failed → Flash error, stay on form
