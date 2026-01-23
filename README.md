@@ -23,7 +23,7 @@ A secure Flask web application that uses Google Gemini AI to automatically apply
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
+git clone <https://github.com/rm01844/Secure-Image-Manipulation-App>
 cd img_mani_web_app
 ```
 
@@ -35,7 +35,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ### 3. Install Dependencies
 ```bash
-pip install -r requirements.txt
+pip install -r requirement.txt
 ```
 
 ### 4. Set Up Google Cloud Credentials
@@ -127,6 +127,8 @@ Visit: `http://127.0.0.1:5000`
 - `GET /api/verify_email/<token>` - API email verification
 
 ### Admin Routes
+
+To create the first admin, navigate to the register.html and scroll below to find Account type and uncomment it before running. Opt for Admin account and once the DB is connected successfully and the Admin credentials are stored then comment it out.
 - `GET /admin/dashboard` - Admin user management
 - `POST /admin/promote/<user_id>` - Promote user to admin
 - `POST /admin/demote/<user_id>` - Demote admin to user
