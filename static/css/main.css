@@ -1,0 +1,31 @@
+/* Add your CSS rules here. Example: */
+h2 {
+    text-align: center;
+    margin-top: 40px;
+}
+
+form {
+    width: 300px;
+    margin: auto;
+}
+
+form label {
+    display: block;
+    text-align: left;
+    margin-bottom: 5px;
+}
+
+form input[type="email"],
+form input[type="password"] {
+    width: 100%;
+}
+
+form button.btn-primary {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.g-recaptcha {
+    margin-bottom: 15px;
+}
