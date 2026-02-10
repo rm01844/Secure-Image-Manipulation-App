@@ -193,6 +193,24 @@ def init_db():
                 locked_until TIMESTAMP
             )
         ''')
+
+        # API Keys table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                key_hash TEXT UNIQUE NOT NULL,
+                key_prefix TEXT NOT NULL,
+                name TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                rate_limit INTEGER DEFAULT 100,
+                request_count INTEGER DEFAULT 0,
+                last_used TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        ''')
         conn.commit()
 
 
@@ -602,6 +620,88 @@ def login():
             return redirect(url_for("welcome", user_id=session["user_id"]))
 
     return render_template('login.html', site_key=SITE_KEY, email_id=email_id)
+
+
+@csrf.exempt
+@app.route('/api-keys')
+@login_required
+def api_keys_page():
+    """API key management page"""
+    from app import get_db_connection
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT id, key_prefix, name, is_active, rate_limit, 
+                   request_count, created_at, last_used, expires_at
+            FROM api_keys
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        ''', (session['user_id'],))
+
+    api_keys = c.fetchall()
+    formatted_keys = []
+
+    for row in api_keys:
+        key = dict(row)   # convert sqlite row to dictionary
+
+        # format dates safely
+        key["created_at_str"] = (
+            key["created_at"].strftime("%Y-%m-%d")
+            if key["created_at"] else ""
+        )
+
+        key["expires_at_str"] = (
+            key["expires_at"].strftime("%Y-%m-%d")
+            if key["expires_at"] else "Never"
+        )
+
+        formatted_keys.append(key)
+
+    return render_template('api_keys.html', api_keys=formatted_keys)
+
+
+@app.route('/api-keys/create', methods=['POST'])
+@login_required
+def create_api_key_web():
+    """Create API key via web interface"""
+    from api.middleware.auth import generate_api_key
+    import hashlib
+    from datetime import datetime, timedelta, timezone
+
+    name = request.form.get('name', 'My API Key')
+
+    api_key = generate_api_key()
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    key_prefix = api_key[:15]
+    expires_at = datetime.now(timezone.utc) + timedelta(days=365)
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO api_keys (user_id, key_hash, key_prefix, name, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (session['user_id'], key_hash, key_prefix, name, expires_at))
+        conn.commit()
+
+    flash(f'API Key Created: {api_key}', 'success')
+    flash('Save this key now - it will not be shown again!', 'warning')
+
+    return redirect(url_for('api_keys_page'))
+
+
+@app.route('/api-keys/delete/<int:key_id>', methods=['POST'])
+@login_required
+def delete_api_key(key_id):
+    """Delete API key"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM api_keys WHERE id = ? AND user_id = ?',
+                  (key_id, session['user_id']))
+        conn.commit()
+
+    flash('API key deleted', 'success')
+    return redirect(url_for('api_keys_page'))
 
 
 @csrf.exempt
@@ -1030,20 +1130,17 @@ class RegisterAPI(Resource):
         subject = "Please verify your email address"
 
         body = f"Hi {first_name},\n\nPlease verify your email by clicking this link:\n{verification_link}\n\nThank you!"
+QÅ9789O'/
 
-        html = f"""
-        <p>Hi {first_name},</p>
-        <p>Please verify your email by clicking the link below:</p>
-        <a href="{verification_link}"
-            style="display:inline-block;padding:10px 20px;background:#007bff;color:#fff;text-decoration:none;border-radius:5px;">Verify Email</a>
-        <p>Thank you!</p>
-        """
+C[P
+        html = f"""<p>Hi {first_name},</p><p>Please verify your email by clicking the link below:</p><a href="{verification_link}" style="display:inline-block;padding:10px 20px;background:#007bff;color:#fff;text-decoration:none;border-radius:5px;">Verify Email</a><p9wsp[rjuaq8ð bu7yu>Thank you!</p>
+        
 
         msg = Message(
             subject=subject,
-            recipients=[email_id],
-            sender=app.config['MAIL_USERNAME'],
-            body=body,
+            recipients=[email_id],\\\
+    
+    JMNY....        body=body,
             html=html
         )
 
@@ -1129,8 +1226,235 @@ class AdminAPI(Resource):
 
 app.register_blueprint(api_bp)
 
+
 # ============================================================================
-# 13. APPLICATION ENTRY POINT
+# 13. API ENDPOINTS
+# ============================================================================
+
+
+@app.route('/api/v1', methods=['GET'])
+def api_root():
+    """API information endpoint"""
+    return jsonify({
+        'name': 'Image Manipulation API',
+        'version': '1.0.0',
+        'description': 'AI-powered image editing API with company t-shirt application',
+        'documentation': '/api/v1/docs',
+        'endpoints': {
+            'authentication': '/api/v1/auth',
+            'images': '/api/v1/images'
+        },
+        'authentication_methods': [
+            'API Key (X-API-Key header)',
+            'JWT Token (Bearer token)'
+        ]
+    }), 200
+
+
+@app.route('/api/v1/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'version': '1.0.0',
+        'services': {
+            'database': 'operational',
+            'ai_service': 'operational' if genai_client else 'unavailable',
+            'email_service': 'operational'
+        }
+    }), 200
+
+
+@csrf.exempt
+@app.route('/api/v1/images/process', methods=['POST'])
+def api_process_image():
+    """
+    API endpoint to process images with API key authentication
+    """
+    # Verify API key
+    api_key = request.headers.get('X-API-Key')
+
+    if not api_key:
+        return jsonify({
+            'error': 'API key missing',
+            'message': 'Please provide X-API-Key header'
+        }), 401
+
+    # Verify API key in database
+    import hashlib
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT user_id, is_active 
+            FROM api_keys 
+            WHERE key_hash = ? AND is_active = 1
+        ''', (key_hash,))
+
+        result = c.fetchone()
+
+        if not result:
+            return jsonify({
+                'error': 'Invalid API key',
+                'message': 'The provided API key is invalid or inactive'
+            }), 401
+
+        user_id = result['user_id']
+
+        # Update last_used and request_count
+        c.execute('''
+            UPDATE api_keys 
+            SET last_used = ?, request_count = request_count + 1 
+            WHERE key_hash = ?
+        ''', (datetime.now(timezone.utc), key_hash))
+        conn.commit()
+
+    # Check if image file is present
+    if 'image' not in request.files:
+        return jsonify({
+            'error': 'No image provided',
+            'message': 'Please upload an image file'
+        }), 400
+
+    file = request.files['image']
+
+    if file.filename == '':
+        return jsonify({
+            'error': 'No file selected',
+            'message': 'Please select a file to upload'
+        }), 400
+
+    # Check if genai_client is available
+    if not genai_client:
+        return jsonify({
+            'error': 'Service unavailable',
+            'message': 'Image processing service is not configured'
+        }), 503
+
+    try:
+        # Save uploaded file
+        upload_filename = f"upload_{user_id}_{uuid.uuid4().hex}.png"
+        upload_path = os.path.join(
+            app.config['UPLOAD_FOLDER'], upload_filename)
+        file.save(upload_path)
+
+        # Detect face
+        import cv2
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        )
+        img = cv2.imread(upload_path)
+        if img is None:
+            os.remove(upload_path)
+            return jsonify({
+                'error': 'Invalid image',
+                'message': 'Could not read the uploaded image'
+            }), 400
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
+        )
+
+        if len(faces) == 0:
+            os.remove(upload_path)
+            return jsonify({
+                'error': 'No face detected',
+                'message': 'No human face detected. Please upload a photo with a person.'
+            }), 400
+
+        # Read image bytes
+        with open(upload_path, "rb") as f:
+            image_bytes = f.read()
+
+        # AI Processing
+        start_time = time.time()
+
+        prompt = """Replace ONLY the shirt/t-shirt/top that the person is wearing with the company uniform t-shirt.
+
+CRITICAL REQUIREMENTS:
+1. Preserve EVERYTHING about the person: face, skin tone, hair, facial features, body shape, pose
+2. Keep the EXACT same background, lighting, and image quality
+3. ONLY change the shirt/t-shirt to match the company uniform design
+4. The new t-shirt must fit naturally on the person's body with correct perspective and wrinkles
+5. Maintain the same pose and arm positions
+6. Keep all accessories (watches, glasses, etc.) unchanged
+
+The company t-shirt design: Black t-shirt with white circular logo that says "SUPPORT SMALL BUSINESS" in a badge/stamp style.
+
+Apply this t-shirt design naturally to the person while preserving everything else in the image."""
+
+        # Retry logic
+        max_retries = 3
+        retry_delay = 2
+
+        for attempt in range(max_retries):
+            try:
+                response = genai_client.models.generate_content(
+                    model="gemini-2.5-flash-image",
+                    contents=[
+                        {"role": "user", "parts": [
+                            {"text": prompt},
+                            {"inline_data": {
+                                "mime_type": "image/png", "data": image_bytes}}
+                        ]}
+                    ],
+                    config=GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        candidate_count=1,
+                    ),
+                )
+                break
+
+            except Exception as api_error:
+                if "429" in str(api_error) or "RESOURCE_EXHAUSTED" in str(api_error):
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                    else:
+                        return jsonify({
+                            'error': 'API quota exceeded',
+                            'message': 'Please try again in a few minutes.'
+                        }), 429
+                else:
+                    raise
+
+        # Save edited image
+        edited_filename = f"edited_{user_id}_{uuid.uuid4().hex}.png"
+        edited_path = os.path.join(
+            app.config['EDITED_FOLDER'], edited_filename)
+
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, "inline_data"):
+                with open(edited_path, "wb") as f:
+                    f.write(part.inline_data.data)
+
+        processing_time = time.time() - start_time
+
+        return jsonify({
+            'success': True,
+            'message': 'Image processed successfully',
+            'original_url': f"/static/uploads/{upload_filename}",
+            'edited_url': f"/static/edited/{edited_filename}",
+            'processing_time': round(processing_time, 2),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 200
+
+    except Exception as e:
+        print(f"Image processing error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': 'Processing failed',
+            'message': 'An error occurred while processing your image'
+        }), 500
+
+
+# ============================================================================
+# 14. APPLICATION ENTRY POINT
 # ============================================================================
 
 if __name__ == '__main__':
