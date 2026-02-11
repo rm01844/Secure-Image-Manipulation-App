@@ -1131,17 +1131,17 @@ class RegisterAPI(Resource):
         subject = "Please verify your email address"
 
         body = f"Hi {first_name},\n\nPlease verify your email by clicking this link:\n{verification_link}\n\nThank you!"
-QÅ9789O'/
 
-C[P
-        html = f"""<p>Hi {first_name},</p><p>Please verify your email by clicking the link below:</p><a href="{verification_link}" style="display:inline-block;padding:10px 20px;background:#007bff;color:#fff;text-decoration:none;border-radius:5px;">Verify Email</a><p9wsp[rjuaq8ð bu7yu>Thank you!</p>
-        
+        html = f"""<p>Hi {first_name},</p>
+<p>Please verify your email by clicking the link below:</p>
+<a href='{verification_link}' style='display:inline-block;padding:10px 20px;background:#007bff;color:#fff;text-decoration:none;border-radius:5px;'>Verify Email</a>
+<p>Thank you!</p>"""
 
         msg = Message(
             subject=subject,
-            recipients=[email_id],\\\
-    
-    JMNY....        body=body,
+            recipients=[email_id],
+            sender=app.config['MAIL_USERNAME'],
+            body=body,
             html=html
         )
 
