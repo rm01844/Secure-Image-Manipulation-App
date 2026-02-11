@@ -50,7 +50,8 @@ if not app.secret_key:
         print("❌ .env file NOT FOUND")
     raise ValueError("FLASK_SECRET must be set in .env file")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///users.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
 api_bp = Blueprint("auth", __name__)
@@ -1458,8 +1459,11 @@ Apply this t-shirt design naturally to the person while preserving everything el
 # ============================================================================
 
 if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5000))
     with app.app_context():
         db.create_all()
+        init_db()
+        
         super_email = os.getenv("SUPERADMIN_EMAIL")
         super_pass = os.getenv("SUPERADMIN_PASSWORD")
 
@@ -1480,4 +1484,5 @@ if __name__ == '__main__':
                 print(f"✅ Superadmin created: {super_email}")
             else:
                 print(f"ℹ️ Superadmin already exists: {super_email}")
-    app.run(port=5000, debug=True)
+    
+    app.run(host='0.0.0.0', port=port, debug=False)
